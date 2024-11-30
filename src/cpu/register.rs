@@ -1,88 +1,102 @@
-//include!("globals.rs");
+#![allow(dead_code)]
+pub const REG_ZERO:u8 = 0;
 
-struct Register {
-    registers: [ArchWS; 32],
+pub const REG_RA:u8 = 1;
+
+pub const REG_SP:u8 = 2;
+pub const REG_GP:u8 = 3;
+pub const REG_TP:u8 = 4;
+
+pub const REG_T0:u8 = 5;
+pub const REG_T1:u8 = 6;
+pub const REG_T2:u8 = 7;
+pub const REG_S0:u8 = 8;
+pub const REG_S1:u8 = 9;
+pub const REG_S2:u8 = 18;
+
+pub(crate) struct Register {
+    pub(crate) registers: [u32; 32],
     
-    zero: * ArchWS,
+    pub zero: *const u32,
 
-    ra: * ArchWS,
+    pub ra: *const u32,
 
-    sp: * ArchWS,
-    gp: * ArchWS,
-    tp: * ArchWS,
+    pub sp: *const u32,
+    pub gp: *const u32,
+    pub tp: *const u32,
 
-    t0: * ArchWS,
-    t1: * ArchWS,
-    t2: * ArchWS,
+    pub t0: *const u32,
+    pub t1: *const u32,
+    pub t2: *const u32,
 
-    s0: * ArchWS,
-    s1: * ArchWS,
+    pub s0: *const u32,
+    pub s1: *const u32,
 
-    a0: * ArchWS,
-    a1: * ArchWS,
-    a2: * ArchWS,
-    a3: * ArchWS,
-    a4: * ArchWS,
-    a5: * ArchWS,
-    a6: * ArchWS,
-    a7: * ArchWS,
+    pub a0: *const u32,
+    pub a1: *const u32,
+    pub a2: *const u32,
+    pub a3: *const u32,
+    pub a4: *const u32,
+    pub a5: *const u32,
+    pub a6: *const u32,
+    pub a7: *const u32,
 
-    s2: * ArchWS,
-    s3: * ArchWS,
-    s4: * ArchWS,
-    s5: * ArchWS,
-    s6: * ArchWS,
-    s7: * ArchWS,
-    s8: * ArchWS,
-    s9: * ArchWS,
-    s10: * ArchWS,
-    s11: * ArchWS,
+    pub s2: *const u32,
+    pub s3: *const u32,
+    pub s4: *const u32,
+    pub s5: *const u32,
+    pub s6: *const u32,
+    pub s7: *const u32,
+    pub s8: *const u32,
+    pub s9: *const u32,
+    pub s10: *const u32,
+    pub s11: *const u32,
 
-    t3: * ArchWS,
-    t4: * ArchWS,
-    t5: * ArchWS,
-    t6: * ArchWS,
+    pub t3: *const u32,
+    pub t4: *const u32,
+    pub t5: *const u32,
+    pub t6: *const u32,
 
-    x0: * ArchWS,
-    x1: * ArchWS,
-    x2: * ArchWS,
-    x3: * ArchWS,
-    x4: * ArchWS,
-    x5: * ArchWS,
-    x6: * ArchWS,
-    x7: * ArchWS,
+    pub x0: *const u32,
+    pub x1: *const u32,
+    pub x2: *const u32,
+    pub x3: *const u32,
+    pub x4: *const u32,
+    pub x5: *const u32,
+    pub x6: *const u32,
+    pub x7: *const u32,
 
-    x8: * ArchWS,
-    x9: * ArchWS,
-    x10: * ArchWS,
-    x11: * ArchWS,
-    x12: * ArchWS,
-    x13: * ArchWS,
-    x14: * ArchWS,
-    x15: * ArchWS,
+    pub x8: *const u32,
+    pub x9: *const u32,
+    pub x10: *const u32,
+    pub x11: *const u32,
+    pub x12: *const u32,
+    pub x13: *const u32,
+    pub x14: *const u32,
+    pub x15: *const u32,
 
-    x16: * ArchWS,
-    x17: * ArchWS,
-    x18: * ArchWS,
-    x19: * ArchWS,
-    x20: * ArchWS,
-    x21: * ArchWS,
-    x22: * ArchWS,
-    x23: * ArchWS,
+    pub x16: *const u32,
+    pub x17: *const u32,
+    pub x18: *const u32,
+    pub x19: *const u32,
+    pub x20: *const u32,
+    pub x21: *const u32,
+    pub x22: *const u32,
+    pub x23: *const u32,
 
-    x24: * ArchWS,
-    x25: * ArchWS,
-    x26: * ArchWS,
-    x27: * ArchWS,
-    x28: * ArchWS,
-    x29: * ArchWS,
-    x30: * ArchWS,
-    x31: * ArchWS,
+    pub x24: *const u32,
+    pub x25: *const u32,
+    pub x26: *const u32,
+    pub x27: *const u32,
+    pub x28: *const u32,
+    pub x29: *const u32,
+    pub x30: *const u32,
+    pub x31: *const u32,
 }
 
 impl Register {
-    fn new() -> Register {
-        let registers: [ArchWS; 32];
+    pub(crate) fn new() -> Register {
+        let registers: [u32; 32] = [0; 32];
         let x0 = &registers[0];
         let zero = &registers[0];
         let x1 = &registers[1];
@@ -221,5 +235,13 @@ impl Register {
             t6,
             x5,
         }
+    }
+
+    pub fn set_register(&mut self, register: u8, value: u32) {
+        self.registers[register as usize] = value;
+    }
+
+    pub fn get_register(&self, register: u8) -> u32 {
+        self.registers[register as usize]
     }
 }

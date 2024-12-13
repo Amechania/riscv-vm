@@ -8,11 +8,6 @@ use crate::cpu::register::*;
 #[allow(dead_code)]
 impl CPU {
 
-    fn inst_fetch(&mut self) {
-        self.instruction = self.memory.get_u32(self.pc);
-        self.opcode = (self.instruction & 0x7F) as u8;
-    }
-
     fn inst_lui(&mut self) {
         let rd = ((self.instruction >> 7) & 0x1F) as u8;
         // LUI is a special case, it's an immediate, not an offset
@@ -233,6 +228,23 @@ impl CPU {
         self.registers.set_register(rd, result);
         self.pc += 4;
     }
+
+    pub(crate) fn exec_inst(&mut self) -> bool {
+        match self.opcode {
+            OP_LUI => self.inst_lui(),
+            OP_JAL => self.inst_jal(),
+            OP_JALR => self.inst_jalr(),
+            OP_BRANCH => self.inst_branch(),
+            OP_LOAD => self.inst_load(),
+            OP_STORE => self.inst_store(),
+            OP_ALUI => self.inst_alui(),
+            OP_ALU => self.inst_alu(),
+            //OP_FENCE => self.inst_fence(),
+            OP_E_C => return true,
+            _ => panic!("Invalid opcode: 0b{:0>8b}", self.opcode),
+        }
+        false
+    }
 }
 
 ///// TESTS /////
@@ -242,21 +254,6 @@ mod tests {
     use crate::cpu::*;
     use crate::cpu::instruction::builder::InstructionBuilder;
     use crate::cpu::opcodes::*;
-
-    #[test]
-    fn test_fetch() {
-        let mut cpu = CPU::new();
-        cpu.pc = 0x10;
-        let instruction = 0xA51E9F80 | OP_JAL as u32;
-        cpu.memory.set_u32(cpu.pc, instruction);
-
-        // Fetch instruction
-        cpu.inst_fetch();
-
-        // Verify results
-        assert_eq!(cpu.instruction, instruction);
-        assert_eq!(cpu.opcode, OP_JAL);
-    }
 
     #[test]
     fn test_lui() {

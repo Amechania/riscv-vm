@@ -241,6 +241,7 @@ impl CPU {
             OP_ALU => self.inst_alu(),
             //OP_FENCE => self.inst_fence(),
             OP_E_C => return true,
+            0x0 => return true,
             _ => panic!("Invalid opcode: 0b{:0>8b}", self.opcode),
         }
         false

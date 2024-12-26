@@ -2,6 +2,7 @@ pub(crate) struct Memory {
     memory: Box<[u8]>,
 }
 
+
 impl Memory {
     pub fn new(memsize: usize) -> Self {
         let memory = {
@@ -12,6 +13,10 @@ impl Memory {
         Self {
             memory, // Convert to heap-allocated slice
         }
+    }
+
+    pub(crate) fn get_memory(&self) -> &Box<[u8]> {
+        &self.memory
     }
 
     // Sets a byte in memory
@@ -62,7 +67,7 @@ impl Memory {
         let value:u32 = value_high_high | value_high_low | value_low_high | value_low_low;
         value
     }
-    
+
     pub fn load_image(&mut self, offset: u32, image: &Vec<u8>) {
         for (i, byte) in image.iter().enumerate() {
             self.set_u8(offset + i as u32, *byte);

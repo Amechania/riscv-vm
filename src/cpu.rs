@@ -12,8 +12,8 @@ const MEMSIZE: usize = MEMSIZE_MB*1024*1024; // 2MB
 
 pub struct CPU {
     pc: u32,
-    registers: Register,
-    memory: Memory,
+    pub(crate) registers: Register,
+    pub(crate) memory: Memory,
     instruction: u32,
     opcode: u8,
 }
@@ -22,7 +22,7 @@ pub struct CPU {
 impl CPU {
     pub fn new() -> Self {
         Self {
-            pc: 0,
+        pc: 4,
             registers: Register::new(),
             memory: Memory::new(MEMSIZE),
             instruction: 0,

@@ -99,8 +99,8 @@ pub(crate) const F7_SUB: u8 = 0x20;
 
 // These codes are used for every M extension instruction
 pub(crate) const F7_M_EXTENSION: u8 = 0x33;
-pub(crate) const F7_M_EXTENSION_W: u8 = 0x3B;
-pub(crate) const F7_M_EXTENSION_D: u8 = 0x7B;
+// W instructions are valid for RV64. We're only targeting RV32
+// pub(crate) const F7_M_EXTENSION_W: u8 = 0x3B;
 
 pub(crate) const F7_SRL: u8 = 0x00;
 pub(crate) const F7_SRA: u8 = 0x20;
@@ -119,12 +119,15 @@ pub(crate) const F73_MUL: u16 = ((F7_M_EXTENSION as u16) << 3) | (F3_MUL as u16)
 pub(crate) const F73_MULH: u16 = ((F7_M_EXTENSION as u16) << 3) | (F3_MULH as u16);
 pub(crate) const F73_MULHSU: u16 = ((F7_M_EXTENSION as u16) << 3) | (F3_MULHSU as u16);
 pub(crate) const F73_MULHU: u16 = ((F7_M_EXTENSION as u16) << 3) | (F3_MULHU as u16);
-pub(crate) const F73_MULW: u16 = ((F7_M_EXTENSION_W as u16) << 3) | (F3_MULW as u16);
+// W instructions are valid for RV64. We're only targeting RV32
+// pub(crate) const F73_MULW: u16 = ((F7_M_EXTENSION_W as u16) << 3) | (F3_MULW as u16);
 
 pub(crate) const F73_DIV: u16 = ((F7_M_EXTENSION as u16) << 3) | (F3_DIV as u16);
 pub(crate) const F73_DIVU: u16 = ((F7_M_EXTENSION as u16) << 3) | (F3_DIVU as u16);
-pub(crate) const F73_DIVW: u16 = ((F7_M_EXTENSION_W as u16) << 3) | (F3_DIVW as u16);
+// W instructions are valid for RV64. We're only targeting RV32
+//pub(crate) const F73_DIVW: u16 = ((F7_M_EXTENSION_W as u16) << 3) | (F3_DIVW as u16);
 
 pub(crate) const F73_REM: u16 = ((F7_M_EXTENSION as u16) << 3) | (F3_REM as u16);
 pub(crate) const F73_REMU: u16 = ((F7_M_EXTENSION as u16) << 3) | (F3_REMU as u16);
-pub(crate) const F73_REMW: u16 = ((F7_M_EXTENSION_W as u16) << 3) | (F3_REMW as u16);
+// W instructions are valid for RV64. We're only targeting RV32
+//pub(crate) const F73_REMW: u16 = ((F7_M_EXTENSION_W as u16) << 3) | (F3_REMW as u16);

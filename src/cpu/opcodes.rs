@@ -44,7 +44,33 @@ pub(crate) const F3_ANDI: u8 = 0x07;
 pub(crate) const F3_SLLI: u8 = 0x01;
 pub(crate) const F3_SRLI_SRAI: u8 = 0x05; // check bit 30
 
+// We check F7C to discern between ADD and SUB
 pub(crate) const F3_ADD_SUB: u8 = 0x00; // check F7C
+
+// First set of M extension instruction of F3 codes
+pub(crate) const F3_MUL: u8 = 0x00;
+pub(crate) const F3_MULH: u8 = 0x01;
+pub(crate) const F3_MULHSU: u8 = 0x02;
+pub(crate) const F3_MULHU: u8 = 0x03;
+pub(crate) const F3_DIV: u8 = 0x04;
+pub(crate) const F3_DIVU: u8 = 0x05;
+pub(crate) const F3_REM: u8 = 0x06;
+pub(crate) const F3_REMU: u8 = 0x07;
+
+// W set of M extension instruction of F3 codes
+pub(crate) const F3_MULW: u8 = 0x00;
+pub(crate) const F3_DIVW: u8 = 0x04;
+pub(crate) const F3_DIVUW: u8 = 0x05;
+pub(crate) const F3_REMW: u8 = 0x06;
+pub(crate) const F3_REMUW: u8 = 0x07;
+
+// D set of M extension instruction of F3 codes
+pub(crate) const F3_MULD: u8 = 0x00;
+pub(crate) const F3_DIVD: u8 = 0x04;
+pub(crate) const F3_DIVUD: u8 = 0x05;
+pub(crate) const F3_REMD: u8 = 0x06;
+pub(crate) const F3_REMUD: u8 = 0x07;
+
 pub(crate) const F3_SLL: u8 = 0x01;
 pub(crate) const F3_SLT: u8 = 0x02;
 pub(crate) const F3_SLTU: u8 = 0x03;
@@ -71,5 +97,34 @@ pub(crate) const F7_SRAI: u8 = 0x08;
 pub(crate) const F7_ADD: u8 = 0x00;
 pub(crate) const F7_SUB: u8 = 0x20;
 
+// These codes are used for every M extension instruction
+pub(crate) const F7_M_EXTENSION: u8 = 0x33;
+pub(crate) const F7_M_EXTENSION_W: u8 = 0x3B;
+pub(crate) const F7_M_EXTENSION_D: u8 = 0x7B;
+
 pub(crate) const F7_SRL: u8 = 0x00;
 pub(crate) const F7_SRA: u8 = 0x20;
+
+pub(crate) const F73_ADD: u16 = ((F7_ADD as u16) << 3) | (F3_ADD_SUB as u16);
+pub(crate) const F73_SUB: u16 = ((F7_SUB as u16) << 3) | (F3_ADD_SUB as u16);
+pub(crate) const F73_SLL: u16 = ((0x0u16) << 3) | (F3_SLL as u16);
+pub(crate) const F73_SLT: u16 = ((0x0u16) << 3) | (F3_SLT as u16);
+pub(crate) const F73_SLTU: u16 = ((0x0u16) << 3) | (F3_SLTU as u16);
+pub(crate) const F73_XOR: u16 = ((0x0u16) << 3) | (F3_XOR as u16);
+pub(crate) const F73_SRL: u16 = ((F7_SRL as u16) << 3) | (F3_SRL_SLA as u16);
+pub(crate) const F73_SRA: u16 = ((F7_SRA as u16) << 3) | (F3_SRL_SLA as u16);
+pub(crate) const F73_OR: u16 = ((0x0u16) << 3) | (F3_OR as u16);
+pub(crate) const F73_AND: u16 = ((0x0u16) << 3) | (F3_AND as u16);
+pub(crate) const F73_MUL: u16 = ((F7_M_EXTENSION as u16) << 3) | (F3_MUL as u16);
+pub(crate) const F73_MULH: u16 = ((F7_M_EXTENSION as u16) << 3) | (F3_MULH as u16);
+pub(crate) const F73_MULHSU: u16 = ((F7_M_EXTENSION as u16) << 3) | (F3_MULHSU as u16);
+pub(crate) const F73_MULHU: u16 = ((F7_M_EXTENSION as u16) << 3) | (F3_MULHU as u16);
+pub(crate) const F73_MULW: u16 = ((F7_M_EXTENSION_W as u16) << 3) | (F3_MULW as u16);
+
+pub(crate) const F73_DIV: u16 = ((F7_M_EXTENSION as u16) << 3) | (F3_DIV as u16);
+pub(crate) const F73_DIVU: u16 = ((F7_M_EXTENSION as u16) << 3) | (F3_DIVU as u16);
+pub(crate) const F73_DIVW: u16 = ((F7_M_EXTENSION_W as u16) << 3) | (F3_DIVW as u16);
+
+pub(crate) const F73_REM: u16 = ((F7_M_EXTENSION as u16) << 3) | (F3_REM as u16);
+pub(crate) const F73_REMU: u16 = ((F7_M_EXTENSION as u16) << 3) | (F3_REMU as u16);
+pub(crate) const F73_REMW: u16 = ((F7_M_EXTENSION_W as u16) << 3) | (F3_REMW as u16);

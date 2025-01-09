@@ -194,32 +194,66 @@ impl CPU {
         let rs1 = ((self.instruction >> 15) & 0x1F) as u8;
         let rs2 = ((self.instruction >> 20) & 0x1F) as u8;
         let funct7 = ((self.instruction >> 25) & 0x7F) as u8;
+        let funct73:u16 = ((funct7 as u16) << 3) | funct3 as u16;
 
         let rs1_value = self.registers.get_register(rs1);
         let rs2_value = self.registers.get_register(rs2);
         let result:u32;
 
-        match funct3 {
-            F3_ADD_SUB => {
-                match funct7 {
-                    F7_ADD => result = rs1_value + rs2_value,
-                    F7_SUB => result = (Wrapping(rs1_value) - Wrapping(rs2_value)).0,
-                    _ => { panic!("Invalid alu instruction - funct7 in add / sub"); }
+        match funct73 {
+            F73_ADD => result = rs1_value + rs2_value,
+            F73_SUB => result = (Wrapping(rs1_value) - Wrapping(rs2_value)).0,
+            F73_SLL => result = rs1_value << (rs2_value & 0x1F),
+            F73_SLT => result = ( (rs1_value as i32) < (rs2_value as i32) ) as u32,
+            F73_SLTU => result = ( rs1_value < rs2_value ) as u32,
+            F73_XOR => result = rs1_value ^ rs2_value,
+            F73_SRL => result = rs1_value >> (rs2_value & 0x1F),
+            F73_SRA => result = rs1_value.rotate_right(rs2_value & 0x1F), // Only lower 5 bits of rs2 are used
+            F73_OR => result = rs1_value | rs2_value,
+            F73_AND => result = rs1_value & rs2_value,
+            F73_MUL => result = (rs1_value as i32).wrapping_mul(rs2_value as i32) as u32, // Rust does not like multiplication overflows
+            F73_MULH => { // We need to cast into larger signed int to get the upper 32 bits. We don't need to do this for MUL
+                let result64 = (rs1_value as i32 as i64).wrapping_mul(rs2_value as i32 as i64);
+                result = (result64 as u64 >> 32) as u32;
+            },
+            F73_MULHSU => { // Casting rs2 to unsigned larger int before casting to signed int, guarantees that the value is not signed
+                let result64 = (rs1_value as i32 as i64).wrapping_mul(rs2_value as u64 as i64);
+                result = (result64 >> 32) as u32;
+            },
+            F73_MULHU => {
+                let result64 = (rs1_value as u64).wrapping_mul(rs2_value as u64);
+                result = (result64 >> 32) as u32;
+            },
+            F73_DIV => {
+                if rs2_value == 0 {
+                    result = 0xFFFFFFFF;
+                } else {
+                    result = (rs1_value as i32 / rs2_value as i32) as u32;
                 }
             },
-            F3_SLL => result = rs1_value << (rs2_value & 0x1F),
-            F3_SLT => result = ( (rs1_value as i32) < (rs2_value as i32) ) as u32,
-            F3_SLTU => result = ( rs1_value < rs2_value ) as u32,
-            F3_XOR => result = rs1_value ^ rs2_value,
-            F3_SRL_SLA => {
-                match funct7 {
-                    F7_SRL => result = rs1_value >> (rs2_value & 0x1F),
-                    F7_SRA => result = rs1_value.rotate_right(rs2_value & 0x1F), // Only lower 5 bits of rs2 are used
-                    _ => { panic!("Invalid alu instruction - funct7 in srl / sra"); }
+            F73_DIVU => {
+                if rs2_value == 0 {
+                    result = 0xFFFFFFFF;
+                } else {
+                    result = rs1_value / rs2_value;
                 }
             },
-            F3_OR => result = rs1_value | rs2_value,
-            F3_AND => result = rs1_value & rs2_value,
+            F73_REM => {
+                if rs2_value == 0 {
+                    result = rs1_value;
+                } else if (rs1_value == (i32::MIN as u32)) && ((rs2_value as i32) == -1) {
+                    result = 0;
+                } else {
+                    result = (rs1_value as i32 % rs2_value as i32) as u32;
+                }
+            },
+            F73_REMU => {
+                if rs2_value == 0 {
+                    result = rs1_value;
+                } else {
+                    result = rs1_value % rs2_value;
+                }
+            },
             _ => {
                 panic!("Invalid alu instruction - funct3");
             }
@@ -1011,5 +1045,870 @@ mod tests {
             assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
         }
 
+        #[test]
+        fn test_mul()
+        {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x10);
+            cpu.registers.set_register(REG_S0, 0x10);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_MUL, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x100;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_mul_double_negative()
+        {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0xFFFFFFFF);
+            cpu.registers.set_register(REG_S0, 0xFFFFFFFE);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_MUL, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x2;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_mul_single_negative()
+        {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0xFFFFFFFE);
+            cpu.registers.set_register(REG_S0, 0x2);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_MUL, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = -4i32 as u32;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_mul_overflow()
+        {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x10000000);
+            cpu.registers.set_register(REG_S0, 0x10);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_MUL, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x0;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_mulh() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x10);
+            cpu.registers.set_register(REG_S0, 0x10);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_MULH, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x0;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_mulh_double_negative()
+        {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0xFFFFFFFF);
+            cpu.registers.set_register(REG_S0, 0xFFFFFFFE);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_MULH, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x0;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_mulh_single_negative()
+        {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0xFFFFFFFE);
+            cpu.registers.set_register(REG_S0, 0x2);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_MULH, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0xFFFFFFFF;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_mulh_overflow_to_higher()
+        {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x1000000);
+            cpu.registers.set_register(REG_S0, 0x100);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_MULH, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x1;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_mulh_overflow()
+        {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0xFFFFFFFF);
+            cpu.registers.set_register(REG_S0, 0xFFFFFFFF);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_MULH, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x0;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_mulhsu() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x10);
+            cpu.registers.set_register(REG_S0, 0x10);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_MULHSU, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x0;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_mulhsu_negative_small_int() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0xC4653600);
+            cpu.registers.set_register(REG_S0, 0x3B9ACA00);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_MULHSU, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0xF21F494C;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_mulhsu_negative_big_int() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0xC4653600);
+            cpu.registers.set_register(REG_S0, 0xC4653600);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_MULHSU, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0xD245ECB3;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_mulhsu_positive_big_int() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x3B9ACA00);
+            cpu.registers.set_register(REG_S0, 0xC4653600);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_MULHSU, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x2DBA134C;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_mulhu() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x10);
+            cpu.registers.set_register(REG_S0, 0x10);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_MULHU, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x0;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_mulhu_high_ls() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x1A2B7F0D);
+            cpu.registers.set_register(REG_S0, 0x10000000);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_MULHU, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x01A2B7F0;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_mulhu_ls_high() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x10000000);
+            cpu.registers.set_register(REG_S0, 0x1A2B7F0D);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_MULHU, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x01A2B7F0;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_mulhu_high_high() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0xEE6B2800);
+            cpu.registers.set_register(REG_S0, 0xEE6B2800);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_MULHU, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0xDE0B6B3A;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_div() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x10);
+            cpu.registers.set_register(REG_S0, 0x10);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_DIV, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 1;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_div_non_perfect() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x14);
+            cpu.registers.set_register(REG_S0, 0x10);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_DIV, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 1;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_div_negative_dividend() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x10);
+            cpu.registers.set_register(REG_S0, 0xFFFFFFFF);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_DIV, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0xFFFFFFF0;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_div_negative_divisor() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0xFFFFFFFF);
+            cpu.registers.set_register(REG_S0, 0x1);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_DIV, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0xFFFFFFFF;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_div_negative_double() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0xFFFFFFFC);
+            cpu.registers.set_register(REG_S0, 0xFFFFFFFE);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_DIV, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x2;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_div_complex() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x840);
+            cpu.registers.set_register(REG_S0, 0x1F4);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_DIV, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x4;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_div_zero_dividend() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x0);
+            cpu.registers.set_register(REG_S0, 0x10);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_DIV, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_div_zero_divisor() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x10);
+            cpu.registers.set_register(REG_S0, 0x0);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_DIV, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0xFFFFFFFF;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_divu() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x14);
+            cpu.registers.set_register(REG_S0, 0x10);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_DIVU, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x1;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_divu_zero_dividend() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x0);
+            cpu.registers.set_register(REG_S0, 0x10);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_DIVU, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x0;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_divu_zero_divisor() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x10);
+            cpu.registers.set_register(REG_S0, 0x0);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_DIVU, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0xFFFFFFFF;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_rem() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x10);
+            cpu.registers.set_register(REG_S0, 0x10);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_REM, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x0;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_rem_zero_dividend() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x0);
+            cpu.registers.set_register(REG_S0, 0x10);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_REM, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x0;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_rem_zero_divisor() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x10);
+            cpu.registers.set_register(REG_S0, 0x0);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_REM, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x10;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_rem_negative_dividend() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0xFFFF0000);
+            cpu.registers.set_register(REG_S0, 0xA);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_REM, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0xFFFFFFFA;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_rem_negative_divisor() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x10);
+            cpu.registers.set_register(REG_S0, 0xFFFFFFFD);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_REM, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x1;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_rem_negative_double() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0xFFFF0000);
+            cpu.registers.set_register(REG_S0, 0xFFFFFFF5);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_REM, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0xFFFFFFF7;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_rem_overflow() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0xF0000000);
+            cpu.registers.set_register(REG_S0, 0xFFFFFFFF);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_REM, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x0;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_remu() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x10);
+            cpu.registers.set_register(REG_S0, 0x10);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_REMU, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x0;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                           \nExpected: 0x{:0>8x},\
+                           \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_remu_zero_dividend() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x0);
+            cpu.registers.set_register(REG_S0, 0x10);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_REMU, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x0;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_remu_zero_divisor() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0x10);
+            cpu.registers.set_register(REG_S0, 0x0);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_REMU, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x10;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                       \nExpected: 0x{:0>8x},\
+                       \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
+
+        #[test]
+        fn test_remu_large_dividend() {
+            let mut cpu = CPU::new();
+            cpu.registers.set_register(REG_S1, 0xF0000000);
+            cpu.registers.set_register(REG_S0, 0x15);
+            cpu.pc = 0x10;
+            cpu.opcode = OP_ALU;
+            cpu.instruction = InstructionBuilder.alu(F7_M_EXTENSION, F3_REMU, REG_S0, REG_S1, REG_S0);
+
+            // Execute load
+            cpu.inst_alu();
+
+            // Verify results
+            let expected:u32 = 0x9;
+            assert_eq!(cpu.registers.get_register(REG_S0), expected,
+                       "Stored value was not correct!\
+                           \nExpected: 0x{:0>8x},\
+                           \nGot:      0x{:0>8x}",
+                       expected, cpu.registers.get_register(REG_S0));
+            assert_eq!(cpu.pc, 0x14, "PC was not updated correctly!");
+        }
     }
 }

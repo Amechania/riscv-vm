@@ -1,0 +1,11 @@
+mod test_lui;
+mod test_jal;
+mod test_jalr;
+mod test_load;
+mod test_store;
+mod test_branch;
+mod test_alui;
+mod test_alu_base;
+mod test_alu_mul;
+mod test_alu_div;
+mod test_alu_rem;

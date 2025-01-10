@@ -171,8 +171,10 @@ impl VmApp {
                     if let Some(chunk) = self.cpu.memory.get_memory().get(start..end) {
                         ui.horizontal(|ui| {
                             ui.label(format!("{:04X}: ", start));
-                            for byte in chunk {
-                                ui.label(format!("{:02X} ", byte));
+                            for mem_page in chunk {
+                                mem_page.get_page().iter().for_each(|byte| {
+                                    ui.label(format!("{:02X} ", byte));
+                                });
                             }
                         });
                     }

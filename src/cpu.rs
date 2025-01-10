@@ -24,7 +24,7 @@ impl CPU {
         Self {
         pc: 4,
             registers: Register::new(),
-            memory: Memory::new(MEMSIZE),
+            memory: Memory::new(MEMSIZE, 8),
             instruction: 0,
             opcode: 0,
         }
